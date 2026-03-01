@@ -112,16 +112,17 @@ function HistoryPanel({ records, onClose }) {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontFamily: "'DM Mono',monospace", fontSize: "16px", fontWeight: 700, color: "#f5c842" }}>{fmt(r.closingTotal)}</div>
-                      <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>closing</div>
+                      <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>closing (counted)</div>
                     </div>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: r.cashTakenOut > 0 ? "8px" : "0" }}>
                     {[
                       { l: "Opening",    v: fmt(r.openingTotal), c: "#a8d8a8" },
                       { l: "Cash Sales", v: fmt(r.cashSales),    c: "#6ec6f0" },
                       variance !== null
                         ? { l: "Variance", v: fmt(variance), c: variance < 0 ? "#f08080" : "#a8d8a8" }
                         : { l: "Expected", v: "—",           c: "rgba(255,255,255,0.3)" },
+                      ...(r.cashTakenOut > 0 ? [{ l: "Cash Taken Out", v: fmt(r.cashTakenOut), c: "#f08080" }] : []),
                     ].map((x) => (
                       <div key={x.l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: "8px", padding: "8px 10px" }}>
                         <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", marginBottom: "3px", textTransform: "uppercase", letterSpacing: "0.6px" }}>{x.l}</div>
@@ -129,6 +130,12 @@ function HistoryPanel({ records, onClose }) {
                       </div>
                     ))}
                   </div>
+                  {r.cashTakenOut > 0 && (
+                    <div style={{ background: "rgba(240,128,128,0.06)", border: "1px solid rgba(240,128,128,0.15)", borderRadius: "8px", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.45)" }}>Adjusted Closing (counted + taken out)</span>
+                      <span style={{ fontFamily: "'DM Mono',monospace", fontSize: "13px", fontWeight: 700, color: "#f5c842" }}>{fmt(r.closingTotal + r.cashTakenOut)}</span>
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -143,6 +150,8 @@ export default function TillCounter() {
   const [openingQtys, setOpeningQtys]     = useState({});
   const [closingQtys, setClosingQtys]     = useState({});
   const [expectedSales, setExpectedSales] = useState("");
+  const [cashTakenOut, setCashTakenOut]   = useState("");
+  const [takenOutNote, setTakenOutNote]   = useState("");
   const [closerName, setCloserName]       = useState("");
   const [records, setRecords]             = useState([]);
   const [showHistory, setShowHistory]     = useState(false);
@@ -165,6 +174,8 @@ export default function TillCounter() {
           setClosingQtys(draft.closing_qtys || {});
           setExpectedSales(draft.expectedSales != null ? String(draft.expectedSales) : "");
           setCloserName(draft.closerName || "");
+          setCashTakenOut(draft.cashTakenOut != null && draft.cashTakenOut > 0 ? String(draft.cashTakenOut) : "");
+          setTakenOutNote(draft.takenOutNote || "");
           if (draft.savedToday) setSavedToday(true);
         }
         if (recs.length > 0) {
@@ -190,17 +201,23 @@ export default function TillCounter() {
         dateKey: todayKey(),
         openingQtys, closingQtys,
         expectedSales: parseFloat(expectedSales) || 0,
-        closerName, savedToday,
+        closerName,
+        cashTakenOut: parseFloat(cashTakenOut) || 0,
+        takenOutNote,
+        savedToday,
       });
     }, 1500);
     return () => clearTimeout(t);
-  }, [openingQtys, closingQtys, expectedSales, closerName, savedToday, loading]);
+  }, [openingQtys, closingQtys, expectedSales, closerName, cashTakenOut, takenOutNote, savedToday, loading]);
 
-  const openingTotal = calcTotal(openingQtys);
-  const closingTotal = calcTotal(closingQtys);
-  const cashSales    = closingTotal - openingTotal;
-  const expected     = parseFloat(expectedSales) || 0;
-  const variance     = expected > 0 ? cashSales - expected : null;
+  const openingTotal   = calcTotal(openingQtys);
+  const closingCounted = calcTotal(closingQtys);
+  const takenOut       = parseFloat(cashTakenOut) || 0;
+  // Adjusted closing = what was counted in till + what was already removed
+  const adjustedClosing = closingCounted + takenOut;
+  const cashSales      = adjustedClosing - openingTotal;
+  const expected       = parseFloat(expectedSales) || 0;
+  const variance       = expected > 0 ? cashSales - expected : null;
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -213,7 +230,7 @@ export default function TillCounter() {
       setTab("closing");
       return;
     }
-    if (closingTotal === 0) {
+    if (closingCounted === 0) {
       showToast("⚠️ Closing float is empty — count your closing till first.", "error");
       return;
     }
@@ -223,7 +240,12 @@ export default function TillCounter() {
         dateKey: todayKey(), dateLabel: todayStr(),
         closerName: closerName.trim(),
         openingQtys, closingQtys,
-        openingTotal, closingTotal, cashSales, expectedSales: expected,
+        openingTotal,
+        closingTotal: closingCounted,
+        cashTakenOut: takenOut,
+        cashSales,
+        expectedSales: expected,
+        takenOutNote: takenOutNote.trim(),
       });
       const recs = await apiLoadRecords();
       setRecords(recs);
@@ -294,9 +316,9 @@ export default function TillCounter() {
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }}>
           {[
-            { label: "Opening Float", val: fmt(openingTotal), color: "#a8d8a8" },
-            { label: "Closing Float", val: fmt(closingTotal), color: "#f5c842" },
-            { label: "Cash Sales",    val: fmt(cashSales),    color: cashSales >= 0 ? "#6ec6f0" : "#f08080" },
+            { label: "Opening Float",   val: fmt(openingTotal),    color: "#a8d8a8" },
+            { label: "Closing (Counted)", val: fmt(closingCounted), color: "#f5c842" },
+            { label: "Cash Sales",      val: fmt(cashSales),       color: cashSales >= 0 ? "#6ec6f0" : "#f08080" },
             variance !== null
               ? { label: "Variance", val: fmt(variance), color: variance === 0 ? "#a8d8a8" : variance > 0 ? "#a8d8a8" : "#f08080", sub: variance > 0 ? "OVER" : variance < 0 ? "SHORT" : "BALANCED" }
               : { label: "Variance", val: "—", color: "rgba(255,255,255,0.25)", sub: "Enter expected sales" },
@@ -308,6 +330,17 @@ export default function TillCounter() {
             </div>
           ))}
         </div>
+
+        {/* Cash taken out — shown prominently when > 0 */}
+        {takenOut > 0 && (
+          <div style={{ background: "rgba(240,128,128,0.07)", border: "1px solid rgba(240,128,128,0.2)", borderRadius: "12px", padding: "10px 16px", marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.8px" }}>Adjusted Closing</div>
+              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", marginTop: "2px" }}>Counted {fmt(closingCounted)} + Taken Out {fmt(takenOut)}</div>
+            </div>
+            <div style={{ fontFamily: "'DM Mono',monospace", fontSize: "20px", fontWeight: 700, color: "#f5c842" }}>{fmt(adjustedClosing)}</div>
+          </div>
+        )}
 
         {/* Expected Sales */}
         <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "14px", padding: "12px 16px", marginBottom: "14px" }}>
@@ -330,26 +363,51 @@ export default function TillCounter() {
             }}>
               {label}
               <span style={{ marginLeft: "6px", fontFamily: "'DM Mono',monospace", fontSize: "11px", opacity: 0.8 }}>
-                {key === "opening" ? fmt(openingTotal) : fmt(closingTotal)}
+                {key === "opening" ? fmt(openingTotal) : fmt(closingCounted)}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Closer name */}
+        {/* Closing tab extras: closer name + cash taken out */}
         {tab === "closing" && (
-          <div style={{ marginBottom: "12px", padding: "12px 14px", background: "rgba(245,200,66,0.05)", borderRadius: "12px", border: "1px solid rgba(245,200,66,0.12)" }}>
-            <label style={{ fontSize: "11px", color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.8px", display: "block", marginBottom: "8px" }}>
-              👤 Closer Name <span style={{ color: "#f08080" }}>*</span>
-            </label>
-            <input type="text" placeholder="Name of person closing the till"
-              value={closerName} onChange={(e) => setCloserName(e.target.value)}
-              style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#fff", padding: "9px 12px", fontSize: "14px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
-            />
-          </div>
+          <>
+            {/* Closer name */}
+            <div style={{ marginBottom: "12px", padding: "12px 14px", background: "rgba(245,200,66,0.05)", borderRadius: "12px", border: "1px solid rgba(245,200,66,0.12)" }}>
+              <label style={{ fontSize: "11px", color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.8px", display: "block", marginBottom: "8px" }}>
+                👤 Closer Name <span style={{ color: "#f08080" }}>*</span>
+              </label>
+              <input type="text" placeholder="Name of person closing the till"
+                value={closerName} onChange={(e) => setCloserName(e.target.value)}
+                style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#fff", padding: "9px 12px", fontSize: "14px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
+              />
+            </div>
+
+            {/* Cash taken out */}
+            <div style={{ marginBottom: "14px", padding: "12px 14px", background: "rgba(240,128,128,0.05)", borderRadius: "12px", border: "1px solid rgba(240,128,128,0.15)" }}>
+              <label style={{ fontSize: "11px", color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.8px", display: "block", marginBottom: "8px" }}>
+                💸 Cash Taken Out <span style={{ color: "rgba(255,255,255,0.25)", fontWeight: 400 }}>(removed before counting)</span>
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <span style={{ color: "#f08080", fontFamily: "'DM Mono',monospace", fontSize: "18px" }}>$</span>
+                <input type="number" placeholder="0.00" value={cashTakenOut}
+                  onChange={(e) => setCashTakenOut(e.target.value)}
+                  style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "#fff", fontSize: "20px", fontFamily: "'DM Mono',monospace", fontWeight: 600 }} />
+              </div>
+              <input type="text" placeholder="Reason / note (e.g. safe drop, banking run)"
+                value={takenOutNote} onChange={(e) => setTakenOutNote(e.target.value)}
+                style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", color: "#fff", padding: "7px 12px", fontSize: "13px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
+              />
+              {takenOut > 0 && (
+                <div style={{ marginTop: "8px", fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>
+                  Adjusted closing will be <span style={{ color: "#f5c842", fontWeight: 600 }}>{fmt(closingCounted + takenOut)}</span> ({fmt(closingCounted)} counted + {fmt(takenOut)} taken out)
+                </div>
+              )}
+            </div>
+          </>
         )}
 
-        {/* Denominations */}
+        {/* Denomination counter */}
         <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "14px", padding: "8px 4px" }}>
           <div style={{ padding: "6px 12px 8px", display: "grid", gridTemplateColumns: "60px 1fr 48px 90px", gap: "10px" }}>
             {["Denom", "Qty", "", "Subtotal"].map((h, i) => (
@@ -375,10 +433,10 @@ export default function TillCounter() {
           </div>
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", margin: "8px 0 0", padding: "10px 14px 6px", display: "flex", justifyContent: "space-between" }}>
             <span style={{ fontSize: "13px", fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>
-              {tab === "opening" ? "Opening Total" : "Closing Total"}
+              {tab === "opening" ? "Opening Total" : "Closing Total (Counted)"}
             </span>
             <span style={{ fontFamily: "'DM Mono',monospace", fontSize: "20px", fontWeight: 700, color: tab === "opening" ? "#a8d8a8" : "#f5c842" }}>
-              {tab === "opening" ? fmt(openingTotal) : fmt(closingTotal)}
+              {tab === "opening" ? fmt(openingTotal) : fmt(closingCounted)}
             </span>
           </div>
         </div>
@@ -394,7 +452,7 @@ export default function TillCounter() {
           {saving ? "Saving…" : savedToday ? "✅ Saved Today — Click to Update" : "💾 Save Closing Count"}
         </button>
 
-        <button onClick={() => { setOpeningQtys({}); setClosingQtys({}); setExpectedSales(""); setCloserName(""); setSavedToday(false); }}
+        <button onClick={() => { setOpeningQtys({}); setClosingQtys({}); setExpectedSales(""); setCloserName(""); setCashTakenOut(""); setTakenOutNote(""); setSavedToday(false); }}
           style={{ marginTop: "10px", width: "100%", background: "transparent", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "10px", color: "rgba(255,255,255,0.22)", padding: "9px", cursor: "pointer", fontSize: "12px", fontFamily: "'DM Sans',sans-serif" }}>
           Reset All
         </button>
