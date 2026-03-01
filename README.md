@@ -1,133 +1,78 @@
-# Till Counter
+# Till Counter v2
 
-AUD cash till counting app with cloud sync. Built with Next.js + Vercel Postgres.
-
----
+AUD cash till counting app. Built with Next.js + Vercel Postgres.
 
 ## Features
-
-- Count opening & closing float by denomination
-- Cash sales calculated automatically (closing − opening)
-- Yesterday's closing auto-carries as today's opening
-- Variance tracking against POS expected sales
-- Closer's name recorded on every save
-- Full history of all saved days
-- Cloud sync — works across all devices
-
----
+1. Opening balance auto-carried from yesterday's closing
+2. Today's sales value input
+3. Petty cash taken out before counting
+4. Bank run taken out after counting
+5. Closer name recorded on every save
+6. All AUD notes ($5–$100) and coins (5c–$2)
+7. Coin rolls for all denominations
+8. Cloud sync — saved to Postgres, works on all devices
 
 ## Project Structure
-
 ```
 ├── app/
-│   ├── layout.js              # Root layout
-│   ├── page.js                # Home page
+│   ├── layout.js
+│   ├── page.js
 │   └── api/
-│       ├── records/route.js   # GET/POST till records
-│       └── draft/route.js     # GET/POST auto-save draft
+│       ├── records/route.js
+│       └── draft/route.js
 ├── components/
-│   └── TillCounter.js         # Main UI component
+│   └── TillCounter.js
 ├── lib/
-│   └── migrate.js             # DB schema migration
+│   └── migrate.js
 ├── package.json
 ├── next.config.js
 ├── jsconfig.json
 └── vercel.json
 ```
 
----
-
-## Deployment (Vercel + Postgres)
-
-### Prerequisites
-- [Node.js 18+](https://nodejs.org)
-- [Vercel account](https://vercel.com) (free)
-- [Vercel CLI](https://vercel.com/docs/cli): `npm i -g vercel`
-
----
+## Deploy to Vercel
 
 ### Step 1 — Push to GitHub
-
 ```bash
 git init
 git add .
-git commit -m "Initial commit"
+git commit -m "Till Counter v2"
 git remote add origin https://github.com/YOUR_USERNAME/till-counter.git
 git branch -M main
 git push -u origin main
 ```
 
----
-
-### Step 2 — Deploy to Vercel
-
-1. Go to [https://vercel.com/new](https://vercel.com/new)
-2. Click **Import Git Repository** → select your repo
-3. ⚠️ Leave **Root Directory blank** (do not set a subdirectory)
-4. Click **Deploy** — wait ~60 seconds
-
----
+### Step 2 — Deploy
+1. Go to https://vercel.com/new
+2. Import your repo
+3. ⚠️ Leave Root Directory **blank**
+4. Click Deploy
 
 ### Step 3 — Add Postgres Database
+1. Vercel dashboard → your project → **Storage**
+2. Create Database → **Neon Postgres** → Create & Connect
 
-1. In Vercel dashboard → open your project → **Storage** tab
-2. Click **Create Database** → choose **Neon Postgres**
-3. Click **Create & Connect** — Vercel auto-injects all `POSTGRES_*` env vars
-
----
-
-### Step 4 — Run Database Migration
-
-This creates the `till_records` and `till_drafts` tables.
-
-```bash
-npm install -g vercel        # if not already installed
+### Step 4 — Run Migration (Windows)
+```cmd
+npm install -g vercel
 vercel login
-vercel env pull .env.local   # pulls your DB credentials locally
+vercel link
+vercel env pull .env.local
 npm install
 node lib/migrate.js
 ```
 
-You should see: `✅ Migration complete.`
-
----
-
 ### Step 5 — Redeploy
-
-```bash
-vercel --prod
+```cmd
+git add .
+git commit -m "deploy"
+git push
 ```
-
-Or push any commit to `main` — Vercel auto-deploys on every push.
-
----
 
 ## Local Development
-
-```bash
+```cmd
 npm install
-vercel env pull .env.local   # pulls Postgres credentials from Vercel
-npm run dev                  # runs at http://localhost:3000
+vercel env pull .env.local
+npm run dev
 ```
-
----
-
-## Environment Variables
-
-These are automatically injected by Vercel when you connect a Postgres database. You do not need to set them manually in production.
-
-| Variable | Description |
-|---|---|
-| `POSTGRES_URL` | Postgres connection string |
-| `POSTGRES_USER` | Database user |
-| `POSTGRES_HOST` | Database host |
-| `POSTGRES_PASSWORD` | Database password |
-| `POSTGRES_DATABASE` | Database name |
-
-For local dev, run `vercel env pull .env.local` to get them automatically.
-
----
-
-## Access & Security
-
-Anyone with the Vercel URL can use the app. For password protection, you can enable [Vercel Authentication](https://vercel.com/docs/security/deployment-protection) in your project settings — no code changes needed.
+Open http://localhost:3000
